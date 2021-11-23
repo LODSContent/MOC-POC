@@ -3,20 +3,26 @@
 # unless you want to specify a different range of IP addresses for allowable RDP access, for example, your 
 # host computer. 
 
-# Please change the $RGName and $VnetName variables as appropriate for your lab environment. 
+# This script requires that you will need to supply values for the resource group and virtual network name. 
 
-# Please note that the this script associates the NSG with only the first subnet defined in the virtual network. If you
-# have more than one subnet, please modify the script as appropriate. 
+# Please note that this script associates the NSG with all the subnets defined in the virtual network. If
+# you will be creating more than one subnet, you may wish to run this script after you have created all 
+# the subnets in the virtual network.
 
-#Define general variables
+# The easiest way to deploy this script is to upload it to an Azure CloudShell window and then run it
+# by using the command .\CreateNsg.ps1 -RGname <ResourceGroupName> -VnetName <Virtual Network Name>
+
+#Define script inputs and variables
+Param(
+    [Parameter(Mandatory=$true,HelpMessage="The resource group name")][string]$RGName,
+    [Parameter(Mandatory=$true,HelpMessage="The virtual network name")][string]$VnetName
+)
 $NSGName = 'RDP-NSG'
-$RGName = 'az140-11-RG' #Change this value, if appropriate
 $Loc = (Get-AzResourceGroup -name $RGName).Location
 $publicIPs = '103.18.85.0/24','104.214.106.0/25','163.47.101.0/25','185.254.59.0/24','206.196.30.0/26'
-$VnetName = 'az140-adds-vnet11' #Change this value, if appropriate
 $Vnet = Get-AzVirtualNetwork -ResourceGroupName $RGName -Name $VnetName
 
-#Define parameters for Network Security Group (NSG) cmdlet
+#Define and splat parameters for Network Security Group (NSG) cmdlet
 $NSGparams = @{
     'Name' = $NSGName
     'ResourceGroupName' = $RGName
@@ -27,7 +33,7 @@ $NSGparams = @{
 $NSG = New-AzNetworkSecurityGroup @NSGparams
 
 
-#Define paramters for NSG rule cmdlet to allow RDP access only from specific hosts on the Internet
+#Define and splat paramters for NSG rule cmdlet to allow RDP access only from specific hosts on the Internet
 $NSGRuleParams = @{
     'Name'                      = 'restrictRDP'
     'NetworkSecurityGroup'      = $NSG
@@ -45,17 +51,17 @@ $NSGRuleParams = @{
 
 Add-AzNetworkSecurityRuleConfig @NSGRuleParams | Set-AzNetworkSecurityGroup
 
+# Get the array of available subnets in the virtual network
 
+$subnets = $Vnet.subnets
 
-#Use the 1st subnet defined in the VNet
-$SubnetParams = @{
-    'VirtualNetwork'        = $Vnet
-    'Name'                  = ($Vnet.Subnets[0]).Name
-    'AddressPrefix'         = ($Vnet.Subnets[0]).AddressPrefix
-    'NetworkSecurityGroup' = $NSG
-}
+# Associate each subnet found in the array to the Network Security Group
 
-# Associate the NSG with the subnet 
+foreach ($subnet in $subnets)
+    {
+        Set-AzureRmVirtualNetworkSubnetConfig -VirtualNetwork $Vnet -Name $subnet.Name -AddressPrefix $subnet.AddressPrefix -NetworkSecurityGroup $NSG
+    }
 
-Set-AzVirtualNetworkSubnetConfig @SubnetParams
+# Commit the changes to the virtual network
+
 Set-AzVirtualNetwork -VirtualNetwork $Vnet
